@@ -17,10 +17,11 @@
     </ul>
 
     <script>
-        // Connect to the WebSocket server using dynamic host and port
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host; // includes hostname:port
-        const socket = new WebSocket(`${protocol}//${host}`);
+        // Connect to the WebSocket server on localhost
+        const protocol = 'ws:';
+        const hostname = 'localhost';
+        const port = 3006; // Matches ENV PORT in Dockerfile
+        const socket = new WebSocket(`${protocol}//${hostname}:${port}`);
 
         // When the WebSocket connection is established
         socket.addEventListener('open', () => {
