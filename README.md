@@ -8,14 +8,14 @@ HTTP Server receives logging from UE5 Blueprint executions
 ### Create CPP Classes
 for this case I used Function Library as parent and expose the function for blueprint purposes
 ```cpp
-.h file
+//.h file
 
 UFUNCTION(BlueprintCallable, Category = "SharedSpaces|HTTP")
 static void SendLogToServer(const FString& ServerURL, const FString& LogMessage);
 ```
 
 ```cpp
-.cpp
+//.cpp file
 
 #include "HttpModule.h"
 #include "Interfaces/IHttpRequest.h"
