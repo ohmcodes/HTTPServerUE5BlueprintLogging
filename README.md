@@ -3,7 +3,10 @@
 HTTP Server receives logging from UE5 Blueprint executions
 
 # Demo
-`logs.ohmcodes.com/log`
+paste this to your blueprint `server address`
+`https://logs.ohmcodes.com/log`
+then
+visit `https://logs.ohmcodes.com/logs` to see your logs
 
 # Endpoints
 ```
