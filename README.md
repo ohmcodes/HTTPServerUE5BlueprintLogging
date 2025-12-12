@@ -18,7 +18,7 @@ HTTP Server receives logging from UE5 Blueprint executions
 ```cpp
 //.h file
 
-UFUNCTION(BlueprintCallable, Category = "SharedSpaces|HTTP")
+UFUNCTION(BlueprintCallable, Category = "Default|HTTP")
 static void SendLogToServer(const FString& ServerURL, const FString& LogMessage);
 ```
 
@@ -30,7 +30,7 @@ static void SendLogToServer(const FString& ServerURL, const FString& LogMessage)
 #include "Interfaces/IHttpResponse.h"
 #include "Misc/MessageDialog.h"
 
-void UubcvrFunctionLibrary::SendLogToServer(const FString& ServerURL, const FString& LogMessage)
+void MyFunctionLibrary::SendLogToServer(const FString& ServerURL, const FString& LogMessage)
 {
 	// Create the HTTP request
 	TSharedRef<IHttpRequest> Request = FHttpModule::Get().CreateRequest();
