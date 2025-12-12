@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Archived Logs</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    button { margin-left: 10px; }
+    li { margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <h1>Archived Logs</h1>
+  <p>
+    <button id="refresh">Refresh</button>
+    <button id="clear">Archive & Clear Current Logs</button>
+  </p>
+  <ul id="list">Loading…</ul>
+
+  <script>
+    async function loadList() {
+      const res = await fetch('/logs/archives');
+      if (!res.ok) {
+        document.getElementById('list').innerText = 'Failed to load archives';
+        return;
+      }
+      const files = await res.json();
+      const ul = document.getElementById('list');
+      ul.innerHTML = '';
+      if (files.length === 0) {
+        ul.innerHTML = '<li>(no archives)</li>';
+        return;
+      }
+      files.forEach(name => {
+        const li = document.createElement('li');
+        const link = document.createElement('a');
+        link.href = '/logs/download/' + encodeURIComponent(name);
+        link.innerText = name;
+        link.download = name;
+        li.appendChild(link);
+        ul.appendChild(li);
+      });
+    }
+
+    document.getElementById('refresh').addEventListener('click', loadList);
+    document.getElementById('clear').addEventListener('click', async () => {
+      if (!confirm('Archive current logs and clear them?')) return;
+      const res = await fetch('/logs/clear', { method: 'POST' });
+      if (!res.ok) {
+        alert('Failed to clear logs');
+        return;
+      }
+      const body = await res.json();
+      alert('Cleared. Archive file: ' + (body.archived || '(none)'));
+      loadList();
+    });
+
+    loadList();
+  </script>
+</body>
+</html>

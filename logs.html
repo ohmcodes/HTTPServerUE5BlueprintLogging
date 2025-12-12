@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Logs</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        ul { list-style-type: none; padding-left: 0; }
+        li { margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <h1>Live Logs</h1>
+    <ul id="logList">
+        <!-- Logs will be added here -->
+    </ul>
+
+    <script>
+        // Connect to the WebSocket server
+        const socket = new WebSocket('ws://localhost:3000');
+
+        // When the WebSocket connection is established
+        socket.addEventListener('open', () => {
+            console.log('WebSocket connected');
+        });
+
+        // When the WebSocket receives a message (new log)
+        socket.addEventListener('message', (event) => {
+            const newLog = JSON.parse(event.data)[0]; // The new log is sent as an array with one item
+            const logList = document.getElementById('logList');
+            const li = document.createElement('li');
+            li.textContent = newLog;
+            logList.appendChild(li);
+            logList.scrollTop = logList.scrollHeight;
+
+            li.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>HTTP Log Server — Docs</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; line-height:1.5; }
+    pre { background:#f6f8fa; padding:10px; border-radius:4px; overflow:auto; }
+    section { margin-bottom:18px; }
+    h1,h2 { margin:6px 0; }
+    code { background:#eef; padding:2px 4px; border-radius:3px; }
+  </style>
+</head>
+<body>
+  <h1>HTTP Log Server — Developer Docs</h1>
+
+  <section>
+    <h2>Overview</h2>
+    <p>This server receives logs (POST), stores them in <code>logs.json</code>, pushes realtime updates over WebSocket, and can archive logs into timestamped files in <code>archives/</code>. When a log containing "shutdown" is received, the server auto-archives the current logs and clears them.</p>
+  </section>
+
+  <section>
+    <h2>Important files & folders</h2>
+    <ul>
+      <li><code>logs.json</code> — current in-memory/persisted logs (JSON array)</li>
+      <li><code>archives/</code> — archived snapshots named <code>logs-YYYY-MM-DDTHH-MM-SS-msZ.json</code></li>
+      <li><code>logs.html</code>, <code>logs_list.html</code>, <code>docs.html</code> — UI pages</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Endpoints</h2>
+    <ul>
+      <li><code>POST /log</code> — body: <code>{ "log": "your log text" }</code>. Adds a log, persists to disk, broadcasts via WebSocket. If the log text contains <code>shutdown</code> (case-insensitive) the server automatically archives current logs and clears them.</li>
+      <li><code>GET /logs</code> — serve live logs page (logs.html)</li>
+      <li><code>GET /logs/data</code> — returns current logs as JSON</li>
+      <li><code>GET /logs/list</code> — UI page that lists archived snapshots with download links</li>
+      <li><code>GET /logs/archives</code> — returns JSON array of archive filenames</li>
+      <li><code>GET /logs/download/:name</code> — download a specific archive</li>
+      <li><code>POST /logs/clear</code> — archive current logs and clear them</li>
+      <li><code>POST /logs/archives/clear</code> — delete all archives</li>
+      <li><code>DELETE /logs/archives/:name</code> — delete a single archive file</li>
+      <li><code>GET /docs</code> — this documentation page</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>WebSocket</h2>
+    <p>Connect to the same host (ws:// or wss://) to receive an initial dump of <code>logs.json</code> and live pushes of new log entries. The server emits small JSON messages: either an array of new logs or control objects like <code>{ cleared: true, archived: 'filename' }</code>.</p>
+  </section>
+
+  <section>
+    <h2>Examples</h2>
+    <p>Send a log via curl:</p>
+    <pre>curl -X POST -H "Content-Type: application/json" -d '{"log":"Player: Shutdown"}' http://localhost:3000/log</pre>
+
+    <p>Fetch archives list:</p>
+    <pre>curl http://localhost:3000/logs/archives</pre>
+
+    <p>Download an archive (browser or curl):</p>
+    <pre>curl -O http://localhost:3000/logs/download/logs-2025-01-01T12-00-00-000Z.json</pre>
+  </section>
+
+  <section>
+    <h2>Behavior notes</h2>
+    <ul>
+      <li>Auto-archive triggers when any posted log contains the word "shutdown" (case-insensitive).</li>
+      <li>Archives are simple JSON arrays — they contain the exact entries from <code>logs.json</code> at archive time.</li>
+      <li>Disk operations are synchronous for simplicity; this is fine for development but consider async handling for production/high-throughput.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Developer tips</h2>
+    <ul>
+      <li>To add fields (timestamps, levels) consider sending structured JSON objects instead of plain strings and updating UI code accordingly.</li>
+      <li>Backup your <code>archives/</code> if logs are important — deletion endpoints are destructive.</li>
+      <li>Use the <code>/logs/data</code> and WebSocket to drive a richer UI or post-processing pipeline.</li>
+    </ul>
+  </section>
+
+  <p><a href="/">Back to home</a></p>
+</body>
+</html>
