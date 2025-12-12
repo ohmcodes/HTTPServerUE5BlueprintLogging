@@ -5,8 +5,16 @@ HTTP Server receives logging from UE5 Blueprint executions
 ## Blueprint:
 <img width="256" height="201" alt="image" src="https://github.com/user-attachments/assets/84445775-be9d-45f2-bce0-6b4cccf4a106" />
 
-### Create CPP Classes
-for this case I used Function Library as parent and expose the function for blueprint purposes
+### Create CPP Class
+
+<img width="237" height="134" alt="image" src="https://github.com/user-attachments/assets/8439d962-5ad1-4eb5-9384-605a7d4c122d" />
+
+- for this example I used Function Library as parent and expose the function for blueprint purposes then `Next`
+<img width="604" height="213" alt="image" src="https://github.com/user-attachments/assets/e06b04c6-5572-468e-8b55-d97160c2a651" />
+
+- Make sure you click public then click `Create Class`
+<img width="329" height="93" alt="image" src="https://github.com/user-attachments/assets/2acba2fe-71ca-4b8b-ba96-35373b58beac" />
+
 ```cpp
 //.h file
 
@@ -62,10 +70,14 @@ PublicDependencyModuleNames.AddRange(
   "JsonUtilities",
 });
 ```
-- navigate to your http server folder
-- run your nodejs server by opening a bash or cmd then type in: `node server.js`
 
-thats it compile and enjoy!
+- Better if you close the editor and it in your IDE
+- navigate to your http server folder
+- open bash or cmd
+- run type in: `npm install`
+- run your nodejs server type in: `node server.js`
+
+
 
 
 
