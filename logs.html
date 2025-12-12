@@ -17,8 +17,10 @@
     </ul>
 
     <script>
-        // Connect to the WebSocket server
-        const socket = new WebSocket('ws://localhost:3000');
+        // Connect to the WebSocket server using dynamic host and port
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host; // includes hostname:port
+        const socket = new WebSocket(`${protocol}//${host}`);
 
         // When the WebSocket connection is established
         socket.addEventListener('open', () => {

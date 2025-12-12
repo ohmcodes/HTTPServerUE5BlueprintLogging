@@ -6,7 +6,8 @@ const path = require('path');
 
 // Create an Express app
 const app = express();
-const port = 3000;
+// Use PORT from environment when available (container-friendly), default to 3006
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3006;
 
 // In-memory log storage (for simplicity)
 let logs = [];
