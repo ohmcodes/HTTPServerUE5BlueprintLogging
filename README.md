@@ -2,6 +2,24 @@
 
 HTTP Server receives logging from UE5 Blueprint executions
 
+# Demo
+`logs.ohmcodes.com/log`
+
+# Endpoints
+```
+POST /log — body: { "log": "your log text" }. Adds a log, persists to disk, broadcasts via WebSocket. If the log text contains shutdown (case-insensitive) the server automatically archives current logs and clears them.
+GET /logs — serve live logs page (logs.html)
+GET /logs/data — returns current logs as JSON
+GET /logs/list — UI page that lists archived snapshots with download links
+GET /logs/archives — returns JSON array of archive filenames
+GET /logs/download/:name — download a specific archive
+POST /logs/clear — archive current logs and clear them
+POST /logs/archives/clear — delete all archives
+DELETE /logs/archives/:name — delete a single archive file
+GET /docs — this documentation page
+```
+
+
 ## Blueprint:
 <img width="256" height="201" alt="image" src="https://github.com/user-attachments/assets/84445775-be9d-45f2-bce0-6b4cccf4a106" />
 
