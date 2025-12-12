@@ -53,10 +53,10 @@ void UubcvrFunctionLibrary::SendLogToServer(const FString& ServerURL, const FStr
 ```
 
 in your `Build.cs`
-```
+```cs
 PublicDependencyModuleNames.AddRange(
 	new string[] {
-  ... other  dependencies
+  //... other  dependencies
   "HTTP",
   "Json",
   "JsonUtilities",
