@@ -312,6 +312,55 @@ app.post('/logs/archives/clear', (req, res) => {
 	}
 });
 
+// POST /logs/clear -> archive current logs and clear them
+app.post('/logs/clear', (req, res) => {
+	try {
+		loadLogs();
+		const archived = archiveLogs();
+		logs = [];
+		saveLogs();
+
+		// notify WS clients
+		wss.clients.forEach(client => {
+			try {
+				if (client.readyState === WebSocket.OPEN) {
+					client.send(JSON.stringify({ type: 'archive', data: { archived: archived || null, cleared: true } }));
+				}
+			} catch (err) {
+				console.error('Error notifying client of archive (clear):', err);
+			}
+		});
+
+		res.json({ ok: true, archived });
+	} catch (err) {
+		console.error('Error in /logs/clear:', err);
+		res.status(500).json({ error: 'Failed to archive and clear logs' });
+	}
+});
+
+// POST /logs/clear-only -> clear logs without archiving
+app.post('/logs/clear-only', (req, res) => {
+	try {
+		logs = [];
+		saveLogs();
+
+		wss.clients.forEach(client => {
+			try {
+				if (client.readyState === WebSocket.OPEN) {
+					client.send(JSON.stringify({ type: 'cleared', data: { cleared: true } }));
+				}
+			} catch (err) {
+				console.error('Error notifying client of clear-only:', err);
+			}
+		});
+
+		res.json({ ok: true });
+	} catch (err) {
+		console.error('Error in /logs/clear-only:', err);
+		res.status(500).json({ error: 'Failed to clear logs' });
+	}
+});
+
 // Optional: a small endpoint to fetch persisted logs as JSON
 app.get('/logs/data', (req, res) => {
 	loadLogs();
