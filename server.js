@@ -121,22 +121,62 @@ wss.on('connection', ws => {
 });
 
 // Add WebSocket upgrade support to the HTTP server
-app.server = app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+// Bind explicitly to 0.0.0.0 so local requests using localhost/127.0.0.1 and
+// containerized environments behave consistently.
+app.server = app.listen(port, '0.0.0.0', () => {
+		console.log(`Server running at http://localhost:${port}`);
+});
+
+app.server.on('error', err => {
+	console.error('HTTP server error:', err);
+});
+
+process.on('uncaughtException', err => {
+	console.error('Uncaught exception:', err);
 });
 
 // Handle WebSocket connection upgrade
 app.server.on('upgrade', (request, socket, head) => {
-  try {
-    console.log('WebSocket upgrade request for', request.url, request.headers['sec-websocket-protocol'] || '');
-    socket.on('error', err => console.error('Socket error during upgrade:', err));
-    wss.handleUpgrade(request, socket, head, ws => {
-      wss.emit('connection', ws, request);
-    });
-  } catch (err) {
-    console.error('Error handling upgrade:', err);
-    try { socket.destroy(); } catch (e) {}
-  }
+	// Only handle websocket upgrade requests
+	const upgradeHeader = (request.headers['upgrade'] || '').toLowerCase();
+	if (upgradeHeader !== 'websocket') {
+		try {
+			socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+		} catch (e) {}
+		try { socket.destroy(); } catch (e) {}
+		return;
+	}
+
+	// Log basic info about the upgrade request (avoid noisy full headers)
+	console.log('WebSocket upgrade request for', request.url);
+
+	// Protective one-time socket error handler to swallow ECONNRESET that can occur
+	// when clients disconnect during the HTTP -> WS upgrade handshake.
+	const onSocketError = (err) => {
+		if (err && err.code === 'ECONNRESET') {
+			console.warn('Socket ECONNRESET during upgrade (ignored)');
+		} else {
+			console.error('Socket error during upgrade:', err);
+		}
+		try { socket.destroy(); } catch (e) {}
+	};
+
+	socket.once('error', onSocketError);
+
+	try {
+		wss.handleUpgrade(request, socket, head, (ws) => {
+			// remove the temporary socket error handler now that we have a WS
+			socket.removeListener('error', onSocketError);
+
+			// attach a safe ws error handler (post-upgrade)
+			ws.on('error', (err) => console.error('WebSocket client error after upgrade:', err));
+
+			wss.emit('connection', ws, request);
+		});
+	} catch (err) {
+		console.error('Error during handleUpgrade:', err);
+		try { socket.destroy(); } catch (e) {}
+	}
 });
 
 // Heartbeat: terminate dead WebSocket connections
@@ -192,32 +232,8 @@ app.post('/log', (req, res) => {
           }
         });
 
-        // If the new log contains "shutdown" (case-insensitive), archive current logs and clear them
-        try {
-            if (typeof log === 'string' && /shutdown/i.test(log)) {
-                const archived = archiveLogs(); // writes current logs (including this shutdown)
-                logs = []; // clear in-memory logs
-                saveLogs(); // persist cleared logs.json
-
-                // notify WebSocket clients about the archive/clear event
-                wss.clients.forEach(client => {
-                    try {
-                        if (client.readyState === WebSocket.OPEN) {
-                            client.send(JSON.stringify({ type: 'archive', data: { archived: archived || null, cleared: true } }));
-                        }
-                    } catch (err) {
-                        console.error('Error notifying client of archive:', err);
-                    }
-                });
-
-                return res.json({ message: 'Log received and archived (shutdown detected)', archived: archived });
-              }
-            } catch (err) {
-              console.error('Error during auto-archive on shutdown:', err);
-              // fallthrough to normal response if archive failed
-            }
-
-            res.send({ message: 'Log received' });
+		// Normal response after storing and broadcasting the log
+		res.send({ message: 'Log received' });
           } else {
             res.status(400).send({ error: 'No log provided' });
           }

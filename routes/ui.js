@@ -5,22 +5,22 @@ const router = express.Router();
 
 // Home page
 router.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'home.html'));
+  res.sendFile(path.join(__dirname, '..', 'views', 'home.html'));
 });
 
 // Live logs page
 router.get('/logs', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'logs.html'));
+  res.sendFile(path.join(__dirname, '..', 'views', 'logs.html'));
 });
 
 // Archived logs page
 router.get('/logs/list', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'logs_list.html'));
+  res.sendFile(path.join(__dirname, '..', 'views', 'logs_list.html'));
 });
 
 // Docs page
 router.get('/docs', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'docs.html'));
+  res.sendFile(path.join(__dirname, '..', 'views', 'docs.html'));
 });
 
 module.exports = router;
