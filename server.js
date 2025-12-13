@@ -83,13 +83,30 @@ const wss = new WebSocket.Server({ noServer: true });
 wss.on('connection', ws => {
     console.log('New WebSocket connection established');
     
-    // Send current logs to the client
-    ws.send(JSON.stringify(logs));
+  // mark connection alive for heartbeat
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
 
-    // When new logs are received, send them to the connected client
-    ws.on('message', message => {
-        console.log('Received from client:', message);
-    });
+  // Send current logs to the client with an envelope so the client can distinguish message types
+  try {
+    ws.send(JSON.stringify({ type: 'init', data: logs }));
+  } catch (err) {
+    console.error('Failed to send initial logs to client:', err);
+  }
+
+  // When messages are received from clients (not used currently)
+  ws.on('message', message => {
+    console.log('Received from client:', message);
+  });
+
+  ws.on('error', err => {
+    console.error('WebSocket error on connection:', err);
+  });
+
+  ws.on('close', (code, reason) => {
+    // graceful close logging
+    console.log('WebSocket connection closed', code, reason && reason.toString && reason.toString());
+  });
 });
 
 // Add WebSocket upgrade support to the HTTP server
@@ -99,9 +116,46 @@ app.server = app.listen(port, () => {
 
 // Handle WebSocket connection upgrade
 app.server.on('upgrade', (request, socket, head) => {
+  try {
+    console.log('WebSocket upgrade request for', request.url, request.headers['sec-websocket-protocol'] || '');
+    socket.on('error', err => console.error('Socket error during upgrade:', err));
     wss.handleUpgrade(request, socket, head, ws => {
-        wss.emit('connection', ws, request);
+      wss.emit('connection', ws, request);
     });
+  } catch (err) {
+    console.error('Error handling upgrade:', err);
+    try { socket.destroy(); } catch (e) {}
+  }
+});
+
+// Heartbeat: terminate dead WebSocket connections
+const HEARTBEAT_INTERVAL_MS = 30_000;
+const heartbeatInterval = setInterval(() => {
+  wss.clients.forEach(ws => {
+    try {
+      // only act on clients that are open
+      if (ws.readyState !== WebSocket.OPEN) return;
+
+      if (ws.isAlive === false) {
+        console.warn('Terminating dead ws connection');
+        return ws.terminate();
+      }
+      ws.isAlive = false;
+      // ping only when open
+      ws.ping(() => {});
+    } catch (err) {
+      console.error('Error during heartbeat ping:', err);
+      try { ws.terminate(); } catch (e) {}
+    }
+  });
+}, HEARTBEAT_INTERVAL_MS);
+
+wss.on('error', err => {
+  console.error('WebSocket server error:', err);
+});
+
+app.server.on('close', () => {
+  clearInterval(heartbeatInterval);
 });
 
 // Route to receive logs via POST
@@ -118,9 +172,13 @@ app.post('/log', (req, res) => {
 
         // Broadcast the new log to all connected WebSocket clients
         wss.clients.forEach(client => {
+          try {
             if (client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify([log]));
+              client.send(JSON.stringify({ type: 'new', data: [log] }));
             }
+          } catch (err) {
+            console.error('Error sending new log to client:', err);
+          }
         });
 
         // If the new log contains "shutdown" (case-insensitive), archive current logs and clear them
@@ -132,9 +190,13 @@ app.post('/log', (req, res) => {
 
                 // notify WebSocket clients about the archive/clear event
                 wss.clients.forEach(client => {
+                  try {
                     if (client.readyState === WebSocket.OPEN) {
-                        client.send(JSON.stringify({ archived: archived || null, cleared: true }));
+                      client.send(JSON.stringify({ type: 'archive', data: { archived: archived || null, cleared: true } }));
                     }
+                  } catch (err) {
+                    console.error('Error notifying client of archive:', err);
+                  }
                 });
 
                 return res.json({ message: 'Log received and archived (shutdown detected)', archived: archived });
@@ -148,6 +210,78 @@ app.post('/log', (req, res) => {
     } else {
         res.status(400).send({ error: 'No log provided' });
     }
+});
+
+// Helper: archive current logs and clear them (used by the UI)
+function clearAndArchiveLogs() {
+  try {
+    const archived = archiveLogs();
+    logs = [];
+    saveLogs();
+
+    // notify connected clients
+    wss.clients.forEach(client => {
+      try {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({ type: 'archive', data: { archived: archived || null, cleared: true } }));
+        }
+      } catch (err) {
+        console.error('Error notifying client of archive (clearAndArchiveLogs):', err);
+      }
+    });
+
+    return archived || null;
+  } catch (err) {
+    console.error('Error in clearAndArchiveLogs:', err);
+    return null;
+  }
+}
+
+// Endpoint: archive current logs and clear them (invoked by UI button)
+app.post('/logs/clear', (req, res) => {
+  try {
+    const archived = clearAndArchiveLogs();
+    res.json({ ok: true, archived: archived });
+  } catch (err) {
+    console.error('Error handling /logs/clear:', err);
+    res.status(500).json({ error: 'Failed to archive/clear logs' });
+  }
+});
+
+// Helper: clear current logs without creating an archive
+function clearLogsOnly() {
+  try {
+    logs = [];
+    saveLogs();
+
+    // notify connected clients that logs were cleared (no archive)
+    wss.clients.forEach(client => {
+      try {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({ type: 'cleared', data: { cleared: true } }));
+        }
+      } catch (err) {
+        console.error('Error notifying client of clear-only:', err);
+      }
+    });
+
+    return true;
+  } catch (err) {
+    console.error('Error in clearLogsOnly:', err);
+    return false;
+  }
+}
+
+// Endpoint: clear current logs without archiving (invoked by UI button)
+app.post('/logs/clear-only', (req, res) => {
+  try {
+    const ok = clearLogsOnly();
+    if (!ok) return res.status(500).json({ error: 'Failed to clear logs' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Error handling /logs/clear-only:', err);
+    res.status(500).json({ error: 'Failed to clear logs' });
+  }
 });
 
 // Serve a basic HTML page to view logs
@@ -257,6 +391,7 @@ app.get('/', (req, res) => {
     </nav>
     <div>
       <button id="clearCurrent">Archive & Clear Current Logs</button>
+      <button id="clearNoArchive">Clear Current (no archive)</button>
       <button id="clearArchives">Delete All Archives</button>
       <button id="refresh">Refresh List</button>
     </div>
@@ -310,6 +445,14 @@ app.get('/', (req, res) => {
       if (!res.ok) { alert('Failed to clear current logs'); return; }
       const body = await res.json();
       alert('Cleared current logs. Archive: ' + (body.archived || '(none)'));
+      loadArchives();
+    });
+
+    document.getElementById('clearNoArchive').addEventListener('click', async () => {
+      if (!confirm('Clear current logs WITHOUT creating an archive?')) return;
+      const res = await fetch('/logs/clear-only', { method: 'POST' });
+      if (!res.ok) { alert('Failed to clear current logs'); return; }
+      alert('Cleared current logs (no archive)');
       loadArchives();
     });
 

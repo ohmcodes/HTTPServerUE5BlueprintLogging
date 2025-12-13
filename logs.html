@@ -11,33 +11,172 @@
     </style>
 </head>
 <body>
-    <h1>Live Logs</h1>
-    <ul id="logList">
-        <!-- Logs will be added here -->
-    </ul>
+    <header>
+        <div style="display:flex; align-items:center; gap:12px">
+            <h1 style="margin:0">Live Logs</h1>
+            <nav style="margin-left:12px">
+                <a href="/logs/list" target="_blank">Archived Logs</a>
+                <span style="margin:0 6px">•</span>
+                <a href="/logs/archives" target="_blank">Archives (JSON)</a>
+                <span style="margin:0 6px">•</span>
+                <a href="/logs/data" target="_blank">Current Logs (JSON)</a>
+            </nav>
+        </div>
+        <div>
+            <button onclick="requestArchive()">Save / Archive</button>
+            <button onclick="requestClearOnly()">Clear (no archive)</button>
+            <button onclick="location.reload()">Reload Page</button>
+        </div>
+    </header>
+
+    <main id="logsContainer" style="flex:1; overflow:auto; padding:16px;">
+        <ul id="logList">
+            <!-- Logs will be added here -->
+        </ul>
+    </main>
 
     <script>
-        // Connect to the WebSocket server on the same host (nginx proxies to 3006)
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host; // logs.ohmcodes.com (without port)
-        const socket = new WebSocket(`${protocol}//${host}`);
+        // Ensure the page fills viewport and header stays visible
+        document.documentElement.style.height = '100%';
+        document.body.style.height = '100%';
+        document.body.style.display = 'flex';
+        document.body.style.flexDirection = 'column';
+        // Simple reconnecting WebSocket client with envelopes
+        (function () {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            const url = `${protocol}//${host}`;
+            let socket = null;
+            // start with a slightly longer reconnect delay to avoid tight reconnect loops
+            let reconnectDelay = 1000;
+            const maxDelay = 30_000;
 
-        // When the WebSocket connection is established
-        socket.addEventListener('open', () => {
-            console.log('WebSocket connected');
-        });
-
-        // When the WebSocket receives a message (new log)
-        socket.addEventListener('message', (event) => {
-            const newLog = JSON.parse(event.data)[0]; // The new log is sent as an array with one item
             const logList = document.getElementById('logList');
-            const li = document.createElement('li');
-            li.textContent = newLog;
-            logList.appendChild(li);
-            logList.scrollTop = logList.scrollHeight;
+            const container = document.getElementById('logsContainer');
 
-            li.scrollIntoView({ behavior: 'smooth', block: 'end' });
-        });
+            function appendLog(text, opts = {}) {
+                const li = document.createElement('li');
+                li.textContent = text;
+                logList.appendChild(li);
+                if (opts.smooth) li.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            }
+
+            function appendLogsBatch(items) {
+                // Append many items without per-item smooth scrolling to avoid long animations
+                const frag = document.createDocumentFragment();
+                for (const item of items) {
+                    const li = document.createElement('li');
+                    li.textContent = item;
+                    frag.appendChild(li);
+                }
+                logList.appendChild(frag);
+                // Jump to bottom of the scrollable container instantly after batch append
+                if (container) container.scrollTop = container.scrollHeight;
+            }
+
+            // remember last init state to avoid re-rendering/scrolling when nothing changed
+            let lastInitCount = 0;
+            let lastInitLastItem = null;
+
+            function handleEnvelope(msg) {
+                if (!msg || !msg.type) return;
+                if (msg.type === 'init' && Array.isArray(msg.data)) {
+                    // initial bulk logs: render last N items without per-item smooth scrolling
+                    const MAX_INIT = 500;
+                    const items = msg.data.length > MAX_INIT ? msg.data.slice(-MAX_INIT) : msg.data;
+                    const lastItem = items.length ? items[items.length - 1] : null;
+
+                    // if nothing changed since last init, skip re-render to avoid scrolling spam
+                    if (lastInitCount === items.length && lastInitLastItem === lastItem) {
+                        return;
+                    }
+
+                    logList.innerHTML = '';
+                    appendLogsBatch(items);
+                    lastInitCount = items.length;
+                    lastInitLastItem = lastItem;
+                } else if (msg.type === 'new' && Array.isArray(msg.data)) {
+                    // For new incoming logs, animate the single/new items
+                    for (const item of msg.data) appendLog(item, { smooth: true });
+                } else if (msg.type === 'archive' && msg.data) {
+                    const name = msg.data.archived || '(no archive created)';
+                    alert('Logs archived: ' + name);
+                    // clear UI list if server cleared
+                    if (msg.data.cleared) logList.innerHTML = '';
+                } else if (msg.type === 'cleared' && msg.data) {
+                    // server cleared logs without archiving
+                    alert('Logs cleared (no archive created)');
+                    logList.innerHTML = '';
+                    if (container) container.scrollTop = 0;
+                }
+            }
+
+            function connect() {
+                socket = new WebSocket(url);
+                socket.addEventListener('open', () => {
+                    console.log('WebSocket connected');
+                    reconnectDelay = 1000; // reset
+                });
+                socket.addEventListener('message', (event) => {
+                    try {
+                        const parsed = JSON.parse(event.data);
+                        handleEnvelope(parsed);
+                    } catch (err) {
+                        console.error('Failed to parse WS message', err, event.data);
+                    }
+                });
+                socket.addEventListener('close', (ev) => {
+                    console.warn('WebSocket closed', ev.code, ev.reason);
+                    scheduleReconnect();
+                });
+                socket.addEventListener('error', (err) => {
+                    console.error('WebSocket error', err);
+                    socket.close();
+                });
+            }
+
+            function scheduleReconnect() {
+                // add jitter so many clients don't reconnect exactly in lockstep
+                const jitter = Math.round(Math.random() * 400);
+                setTimeout(() => {
+                    reconnectDelay = Math.min(maxDelay, Math.max(1000, Math.round(reconnectDelay * 2)));
+                    connect();
+                }, reconnectDelay + jitter);
+            }
+
+            // connect initially
+            connect();
+
+            // expose a method to request an archive/save from the UI
+            window.requestArchive = async function () {
+                if (!confirm('Archive current logs and clear them on the server?')) return;
+                try {
+                    const res = await fetch('/logs/clear', { method: 'POST' });
+                    if (!res.ok) throw new Error('Server returned ' + res.status);
+                    const body = await res.json();
+                    alert('Archive saved: ' + (body.archived || '(none)'));
+                    // server will also notify via WS and clear UI if needed
+                } catch (err) {
+                    alert('Failed to archive logs: ' + err.message);
+                }
+            };
+
+            // request clear without archiving
+            window.requestClearOnly = async function () {
+                if (!confirm('Clear current logs on the server WITHOUT saving an archive?')) return;
+                try {
+                    const res = await fetch('/logs/clear-only', { method: 'POST' });
+                    if (!res.ok) throw new Error('Server returned ' + res.status);
+                    alert('Cleared current logs (no archive saved)');
+                    // server will also notify via WS and clear UI if needed
+                } catch (err) {
+                    alert('Failed to clear logs: ' + err.message);
+                }
+            };
+        })();
     </script>
+    <div style="margin-top:12px">
+        <button id="archiveBtn" onclick="requestArchive()">Save / Archive Current Logs</button>
+    </div>
 </body>
 </html>
