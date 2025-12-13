@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>HTTP Log Server — Home</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app-wrap">
+    <header class="header">
+      <div class="brand">
+        <div class="logo">L</div>
+        <div>
+          <h1>HTTP Log Server</h1>
+          <div class="meta">View live logs, archive snapshots, and manage files</div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px">
+        <nav>
+          <a href="/logs">Live Logs</a>
+          <a href="/logs/list">Archived</a>
+          <a href="/docs">Docs</a>
+        </nav>
+        <div class="controls">
+          <button class="btn" id="clearCurrent">Archive & Clear</button>
+          <button class="btn" id="clearNoArchive">Clear (no archive)</button>
+          <button class="btn" id="refresh">Refresh</button>
+        </div>
+      </div>
+    </header>
+
+    <main style="margin-top:18px">
+      <section class="panel">
+        <h3 style="margin-top:0">Recent Archives</h3>
+        <ul id="archives">Loading…</ul>
+      </section>
+    </main>
+
+    <footer class="site-foot">Archive files are stored in <code>/archives</code> • Logs persisted in <code>/logs.json</code></footer>
+  </div>
+
+  <script>
+    async function loadArchives() {
+      const ul = document.getElementById('archives');
+      ul.innerHTML = 'Loading…';
+      try {
+        const res = await fetch('/logs/archives');
+        if (!res.ok) throw new Error('Failed to fetch');
+        const files = await res.json();
+        if (!files.length) { ul.innerHTML = '<li>(no archives)</li>'; return; }
+        ul.innerHTML = '';
+        for (const f of files) {
+          const li = document.createElement('li');
+          const a = document.createElement('a');
+          a.href = '/logs/download/' + encodeURIComponent(f);
+          a.innerText = f;
+          a.target = '_self';
+          li.appendChild(a);
+
+          const del = document.createElement('button');
+          del.innerText = 'Delete';
+          del.style.marginLeft = '8px';
+          del.addEventListener('click', async () => {
+            if (!confirm('Delete archive ' + f + '?')) return;
+            const dres = await fetch('/logs/archives/' + encodeURIComponent(f), { method: 'DELETE' });
+            if (dres.ok) loadArchives(); else alert('Delete failed');
+          });
+          li.appendChild(del);
+
+          ul.appendChild(li);
+        }
+      } catch (e) {
+        ul.innerHTML = '<li>Error loading archives</li>';
+      }
+    }
+
+    document.getElementById('refresh').addEventListener('click', loadArchives);
+
+    document.getElementById('clearCurrent').addEventListener('click', async () => {
+      if (!confirm('Archive current logs and clear them?')) return;
+      const res = await fetch('/logs/clear', { method: 'POST' });
+      if (!res.ok) { alert('Failed to clear current logs'); return; }
+      const body = await res.json();
+      alert('Cleared current logs. Archive: ' + (body.archived || '(none)'));
+      loadArchives();
+    });
+
+    document.getElementById('clearNoArchive').addEventListener('click', async () => {
+      if (!confirm('Clear current logs WITHOUT creating an archive?')) return;
+      const res = await fetch('/logs/clear-only', { method: 'POST' });
+      if (!res.ok) { alert('Failed to clear current logs'); return; }
+      alert('Cleared current logs (no archive)');
+      loadArchives();
+    });
+
+    // initial load
+    loadArchives();
+  </script>
+</body>
+</html>

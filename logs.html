@@ -1,111 +1,113 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Logs</title>
-    <style>
-        body { font-family: Arial, sans-serif; padding: 20px; }
-        ul { list-style-type: none; padding-left: 0; }
-        li { margin: 5px 0; }
-    </style>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>HTTP Log Server — Live Logs</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>html,body{height:100%;margin:0}</style>
 </head>
 <body>
-    <header>
-        <div style="display:flex; align-items:center; gap:12px">
-            <h1 style="margin:0">Live Logs</h1>
-            <nav style="margin-left:12px">
-                <a href="/logs/list" target="_blank">Archived Logs</a>
-                <span style="margin:0 6px">•</span>
-                <a href="/logs/archives" target="_blank">Archives (JSON)</a>
-                <span style="margin:0 6px">•</span>
-                <a href="/logs/data" target="_blank">Current Logs (JSON)</a>
-            </nav>
-        </div>
-        <div>
-            <button onclick="requestArchive()">Save / Archive</button>
-            <button onclick="requestClearOnly()">Clear (no archive)</button>
-            <button onclick="location.reload()">Reload Page</button>
-        </div>
-    </header>
+    <div class="app">
+        <header class="app-header">
+            <div class="brand">
+                <div class="logo">L</div>
+                <div>
+                    <h1>HTTP Log Server</h1>
+                    <div class="meta">Live streaming logs • Simple UX for quick troubleshooting</div>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:18px">
+                <nav>
+                    <a href="/">Home</a>
+                    <a href="/logs/list">Archives</a>
+                    <a href="/docs">Docs</a>
+                </nav>
+                <div class="controls">
+                    <button class="btn" onclick="requestClearOnly()">Clear (no archive)</button>
+                    <button class="btn" onclick="requestArchive()">Save / Archive</button>
+                </div>
+            </div>
+        </header>
 
-    <main id="logsContainer" style="flex:1; overflow:auto; padding:16px;">
-        <ul id="logList">
-            <!-- Logs will be added here -->
-        </ul>
-    </main>
+        <main class="container">
+            <section class="panel" style="display:flex;flex-direction:column">
+                <div class="meta">Live stream (latest at bottom)</div>
+                <div id="logsContainer" class="logs" aria-live="polite">
+                    <ul id="logList" style="list-style:none;padding:0;margin:0"></ul>
+                </div>
+            </section>
+            <aside style="width:280px">
+                <div class="panel">
+                    <h3 style="margin-top:0">Actions</h3>
+                    <p style="margin:8px 0;color:var(--muted)">Quick controls for managing logs</p>
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                        <button class="btn primary" onclick="requestArchive()">Save & Clear</button>
+                        <button class="btn" onclick="requestClearOnly()">Clear (no archive)</button>
+                        <a class="btn" href="/logs/archives">View archives (JSON)</a>
+                        <a class="btn" href="/logs/list">Archived logs (page)</a>
+                    </div>
+                </div>
+            </aside>
+        </main>
+
+        <footer>Archive files saved to <code>/archives</code> • Logs persisted in <code>/logs.json</code></footer>
+    </div>
 
     <script>
-        // Ensure the page fills viewport and header stays visible
-        document.documentElement.style.height = '100%';
-        document.body.style.height = '100%';
-        document.body.style.display = 'flex';
-        document.body.style.flexDirection = 'column';
-        // Simple reconnecting WebSocket client with envelopes
         (function () {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const host = window.location.host;
-            const url = `${protocol}//${host}`;
+            const url = protocol + '//' + host;
             let socket = null;
-            // start with a slightly longer reconnect delay to avoid tight reconnect loops
             let reconnectDelay = 1000;
-            const maxDelay = 30_000;
+            const maxDelay = 30000;
 
             const logList = document.getElementById('logList');
             const container = document.getElementById('logsContainer');
 
             function appendLog(text, opts = {}) {
                 const li = document.createElement('li');
+                li.className = 'log-item';
                 li.textContent = text;
                 logList.appendChild(li);
-                if (opts.smooth) li.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                if (opts.smooth && container) container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
             }
 
             function appendLogsBatch(items) {
-                // Append many items without per-item smooth scrolling to avoid long animations
                 const frag = document.createDocumentFragment();
                 for (const item of items) {
                     const li = document.createElement('li');
+                    li.className = 'log-item';
                     li.textContent = item;
                     frag.appendChild(li);
                 }
                 logList.appendChild(frag);
-                // Jump to bottom of the scrollable container instantly after batch append
                 if (container) container.scrollTop = container.scrollHeight;
             }
 
-            // remember last init state to avoid re-rendering/scrolling when nothing changed
             let lastInitCount = 0;
             let lastInitLastItem = null;
 
             function handleEnvelope(msg) {
                 if (!msg || !msg.type) return;
                 if (msg.type === 'init' && Array.isArray(msg.data)) {
-                    // initial bulk logs: render last N items without per-item smooth scrolling
                     const MAX_INIT = 500;
                     const items = msg.data.length > MAX_INIT ? msg.data.slice(-MAX_INIT) : msg.data;
                     const lastItem = items.length ? items[items.length - 1] : null;
-
-                    // if nothing changed since last init, skip re-render to avoid scrolling spam
-                    if (lastInitCount === items.length && lastInitLastItem === lastItem) {
-                        return;
-                    }
-
+                    if (lastInitCount === items.length && lastInitLastItem === lastItem) return;
                     logList.innerHTML = '';
                     appendLogsBatch(items);
                     lastInitCount = items.length;
                     lastInitLastItem = lastItem;
                 } else if (msg.type === 'new' && Array.isArray(msg.data)) {
-                    // For new incoming logs, animate the single/new items
                     for (const item of msg.data) appendLog(item, { smooth: true });
                 } else if (msg.type === 'archive' && msg.data) {
-                    const name = msg.data.archived || '(no archive created)';
+                    const name = msg.data.archived || '(no archive)';
                     alert('Logs archived: ' + name);
-                    // clear UI list if server cleared
-                    if (msg.data.cleared) logList.innerHTML = '';
+                    if (msg.data.cleared) { logList.innerHTML = ''; if (container) container.scrollTop = 0; }
                 } else if (msg.type === 'cleared' && msg.data) {
-                    // server cleared logs without archiving
-                    alert('Logs cleared (no archive created)');
+                    alert('Logs cleared (no archive)');
                     logList.innerHTML = '';
                     if (container) container.scrollTop = 0;
                 }
@@ -113,41 +115,15 @@
 
             function connect() {
                 socket = new WebSocket(url);
-                socket.addEventListener('open', () => {
-                    console.log('WebSocket connected');
-                    reconnectDelay = 1000; // reset
-                });
-                socket.addEventListener('message', (event) => {
-                    try {
-                        const parsed = JSON.parse(event.data);
-                        handleEnvelope(parsed);
-                    } catch (err) {
-                        console.error('Failed to parse WS message', err, event.data);
-                    }
-                });
-                socket.addEventListener('close', (ev) => {
-                    console.warn('WebSocket closed', ev.code, ev.reason);
-                    scheduleReconnect();
-                });
-                socket.addEventListener('error', (err) => {
-                    console.error('WebSocket error', err);
-                    socket.close();
-                });
+                socket.addEventListener('open', () => { console.log('WS open'); reconnectDelay = 1000; });
+                socket.addEventListener('message', (ev) => { try { handleEnvelope(JSON.parse(ev.data)); } catch (e) { console.error(e); } });
+                socket.addEventListener('close', (ev) => { console.warn('WS close', ev.code); scheduleReconnect(); });
+                socket.addEventListener('error', (e) => { console.error('WS error', e); socket.close(); });
             }
 
-            function scheduleReconnect() {
-                // add jitter so many clients don't reconnect exactly in lockstep
-                const jitter = Math.round(Math.random() * 400);
-                setTimeout(() => {
-                    reconnectDelay = Math.min(maxDelay, Math.max(1000, Math.round(reconnectDelay * 2)));
-                    connect();
-                }, reconnectDelay + jitter);
-            }
-
-            // connect initially
+            function scheduleReconnect() { const jitter = Math.round(Math.random()*400); setTimeout(()=>{ reconnectDelay = Math.min(maxDelay, Math.max(1000, Math.round(reconnectDelay*2))); connect(); }, reconnectDelay + jitter); }
             connect();
 
-            // expose a method to request an archive/save from the UI
             window.requestArchive = async function () {
                 if (!confirm('Archive current logs and clear them on the server?')) return;
                 try {
@@ -155,28 +131,18 @@
                     if (!res.ok) throw new Error('Server returned ' + res.status);
                     const body = await res.json();
                     alert('Archive saved: ' + (body.archived || '(none)'));
-                    // server will also notify via WS and clear UI if needed
-                } catch (err) {
-                    alert('Failed to archive logs: ' + err.message);
-                }
+                } catch (err) { alert('Failed to archive logs: ' + err.message); }
             };
 
-            // request clear without archiving
             window.requestClearOnly = async function () {
                 if (!confirm('Clear current logs on the server WITHOUT saving an archive?')) return;
                 try {
                     const res = await fetch('/logs/clear-only', { method: 'POST' });
                     if (!res.ok) throw new Error('Server returned ' + res.status);
                     alert('Cleared current logs (no archive saved)');
-                    // server will also notify via WS and clear UI if needed
-                } catch (err) {
-                    alert('Failed to clear logs: ' + err.message);
-                }
+                } catch (err) { alert('Failed to clear logs: ' + err.message); }
             };
         })();
     </script>
-    <div style="margin-top:12px">
-        <button id="archiveBtn" onclick="requestArchive()">Save / Archive Current Logs</button>
-    </div>
 </body>
 </html>

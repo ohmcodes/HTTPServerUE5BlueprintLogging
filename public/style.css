@@ -1,0 +1,30 @@
+/* Shared site styles for HTTP Log Server */
+:root{
+  --bg:#0f1724;
+  --muted:#9aa6b2;
+  --accent:#4f9aff;
+  --glass: rgba(255,255,255,0.03);
+  --radius:10px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Courier New', monospace;
+  --ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+}
+html,body{height:100%;margin:0;font-family:var(--ui);background:linear-gradient(180deg,#071226 0%, #081423 100%);color:#e6eef6}
+.app-wrap{max-width:1100px;margin:28px auto;padding:18px}
+.header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.app{display:flex;flex-direction:column;height:100vh}
+.app-header{display:flex;align-items:center;justify-content:space-between;padding:18px 28px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);backdrop-filter: blur(4px)}
+.brand{display:flex;gap:12px;align-items:center}
+.logo{width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#7bd0ff);display:flex;align-items:center;justify-content:center;color:#042033;font-weight:700}
+h1{margin:0;font-size:20px}
+nav a{color:var(--muted);text-decoration:none;margin-right:12px}
+.controls{display:flex;gap:10px}
+.btn{padding:8px 12px;border-radius:8px;background:var(--glass);border:1px solid rgba(255,255,255,0.03);color:var(--muted);cursor:pointer}
+.btn.primary{background:linear-gradient(90deg,var(--accent),#8ecbff);border:none;color:#042033;font-weight:600}
+.panel{background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);border-radius:var(--radius);padding:14px;box-shadow:0 6px 24px rgba(2,6,23,0.6);flex:1}
+.container{display:flex;flex:1;gap:20px;padding:20px}
+aside{width:280px;flex:0 0 280px}
+.logs{height:100%;overflow:auto;border-radius:8px;padding:12px;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);font-family:var(--mono);font-size:13px;color:#cfe8ff}
+.log-item{padding:6px 8px;border-bottom:1px dashed rgba(255,255,255,0.02)}
+.meta{font-size:12px;color:var(--muted);margin-bottom:8px}
+footer.site-foot{padding:12px 20px;text-align:center;color:var(--muted);font-size:13px}
+@media (max-width:720px){.header{flex-direction:column;align-items:flex-start;gap:12px}.app-wrap{padding:12px}}

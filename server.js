@@ -76,6 +76,17 @@ loadLogs();
 // Middleware to parse JSON bodies
 app.use(bodyParser.json());
 
+// Serve static assets (CSS, images, client JS) under /static
+app.use('/static', express.static(path.join(__dirname, 'public')));
+
+// Mount UI router (separate file) to serve pages
+try {
+  const uiRouter = require(path.join(__dirname, 'routes', 'ui'));
+  app.use('/', uiRouter);
+} catch (e) {
+  console.error('Failed to mount UI router:', e);
+}
+
 // Create WebSocket server
 const wss = new WebSocket.Server({ noServer: true });
 
@@ -190,99 +201,27 @@ app.post('/log', (req, res) => {
 
                 // notify WebSocket clients about the archive/clear event
                 wss.clients.forEach(client => {
-                  try {
-                    if (client.readyState === WebSocket.OPEN) {
-                      client.send(JSON.stringify({ type: 'archive', data: { archived: archived || null, cleared: true } }));
+                    try {
+                        if (client.readyState === WebSocket.OPEN) {
+                            client.send(JSON.stringify({ type: 'archive', data: { archived: archived || null, cleared: true } }));
+                        }
+                    } catch (err) {
+                        console.error('Error notifying client of archive:', err);
                     }
-                  } catch (err) {
-                    console.error('Error notifying client of archive:', err);
-                  }
                 });
 
                 return res.json({ message: 'Log received and archived (shutdown detected)', archived: archived });
+              }
+            } catch (err) {
+              console.error('Error during auto-archive on shutdown:', err);
+              // fallthrough to normal response if archive failed
             }
-        } catch (err) {
-            console.error('Error during auto-archive on shutdown:', err);
-            // fallthrough to normal response if archive failed
-        }
 
-        res.send({ message: 'Log received' });
-    } else {
-        res.status(400).send({ error: 'No log provided' });
-    }
-});
-
-// Helper: archive current logs and clear them (used by the UI)
-function clearAndArchiveLogs() {
-  try {
-    const archived = archiveLogs();
-    logs = [];
-    saveLogs();
-
-    // notify connected clients
-    wss.clients.forEach(client => {
-      try {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify({ type: 'archive', data: { archived: archived || null, cleared: true } }));
-        }
-      } catch (err) {
-        console.error('Error notifying client of archive (clearAndArchiveLogs):', err);
-      }
-    });
-
-    return archived || null;
-  } catch (err) {
-    console.error('Error in clearAndArchiveLogs:', err);
-    return null;
-  }
-}
-
-// Endpoint: archive current logs and clear them (invoked by UI button)
-app.post('/logs/clear', (req, res) => {
-  try {
-    const archived = clearAndArchiveLogs();
-    res.json({ ok: true, archived: archived });
-  } catch (err) {
-    console.error('Error handling /logs/clear:', err);
-    res.status(500).json({ error: 'Failed to archive/clear logs' });
-  }
-});
-
-// Helper: clear current logs without creating an archive
-function clearLogsOnly() {
-  try {
-    logs = [];
-    saveLogs();
-
-    // notify connected clients that logs were cleared (no archive)
-    wss.clients.forEach(client => {
-      try {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify({ type: 'cleared', data: { cleared: true } }));
-        }
-      } catch (err) {
-        console.error('Error notifying client of clear-only:', err);
-      }
-    });
-
-    return true;
-  } catch (err) {
-    console.error('Error in clearLogsOnly:', err);
-    return false;
-  }
-}
-
-// Endpoint: clear current logs without archiving (invoked by UI button)
-app.post('/logs/clear-only', (req, res) => {
-  try {
-    const ok = clearLogsOnly();
-    if (!ok) return res.status(500).json({ error: 'Failed to clear logs' });
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error('Error handling /logs/clear-only:', err);
-    res.status(500).json({ error: 'Failed to clear logs' });
-  }
-});
+            res.send({ message: 'Log received' });
+          } else {
+            res.status(400).send({ error: 'No log provided' });
+          }
+        });
 
 // Serve a basic HTML page to view logs
 app.get('/logs', (req, res) => {
@@ -363,114 +302,7 @@ app.get('/logs/data', (req, res) => {
 	res.json(logs);
 });
 
-// updated root page: added link to /docs in nav
-app.get('/', (req, res) => {
-  res.send(`<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>Log Server — Home</title>
-<style>
-  body { font-family: Arial, sans-serif; margin: 20px; }
-  header { display:flex; gap:12px; align-items:center; margin-bottom:16px; }
-  nav a { margin-right:8px; text-decoration:none; color:#0366d6; }
-  button { margin-left:6px; }
-  #archives { margin-top:18px; }
-  li { margin:6px 0; }
-</style>
-</head>
-<body>
-  <header>
-    <h2 style="margin:0 12px 0 0">HTTP Log Server</h2>
-    <nav>
-      <a href="/logs" target="_blank">Live Logs</a>
-      <a href="/logs/list" target="_blank">Archived Logs (page)</a>
-      <a href="/logs/archives" target="_blank">Archives (JSON)</a>
-      <a href="/logs/data" target="_blank">Current Logs (JSON)</a>
-      <a href="/docs" target="_blank">Docs</a>
-    </nav>
-    <div>
-      <button id="clearCurrent">Archive & Clear Current Logs</button>
-      <button id="clearNoArchive">Clear Current (no archive)</button>
-      <button id="clearArchives">Delete All Archives</button>
-      <button id="refresh">Refresh List</button>
-    </div>
-  </header>
-
-  <section>
-    <h3>Recent Archives</h3>
-    <ul id="archives">Loading…</ul>
-  </section>
-
-  <script>
-    async function loadArchives() {
-      const ul = document.getElementById('archives');
-      ul.innerHTML = 'Loading…';
-      try {
-        const res = await fetch('/logs/archives');
-        if (!res.ok) throw new Error('Failed to fetch');
-        const files = await res.json();
-        if (!files.length) { ul.innerHTML = '<li>(no archives)</li>'; return; }
-        ul.innerHTML = '';
-        for (const f of files) {
-          const li = document.createElement('li');
-          const a = document.createElement('a');
-          a.href = '/logs/download/' + encodeURIComponent(f);
-          a.innerText = f;
-          a.target = '_blank';
-          li.appendChild(a);
-
-          const del = document.createElement('button');
-          del.innerText = 'Delete';
-          del.style.marginLeft = '8px';
-          del.addEventListener('click', async () => {
-            if (!confirm('Delete archive ' + f + '?')) return;
-            const dres = await fetch('/logs/archives/' + encodeURIComponent(f), { method: 'DELETE' });
-            if (dres.ok) loadArchives(); else alert('Delete failed');
-          });
-          li.appendChild(del);
-
-          ul.appendChild(li);
-        }
-      } catch (e) {
-        ul.innerHTML = '<li>Error loading archives</li>';
-      }
-    }
-
-    document.getElementById('refresh').addEventListener('click', loadArchives);
-
-    document.getElementById('clearCurrent').addEventListener('click', async () => {
-      if (!confirm('Archive current logs and clear them?')) return;
-      const res = await fetch('/logs/clear', { method: 'POST' });
-      if (!res.ok) { alert('Failed to clear current logs'); return; }
-      const body = await res.json();
-      alert('Cleared current logs. Archive: ' + (body.archived || '(none)'));
-      loadArchives();
-    });
-
-    document.getElementById('clearNoArchive').addEventListener('click', async () => {
-      if (!confirm('Clear current logs WITHOUT creating an archive?')) return;
-      const res = await fetch('/logs/clear-only', { method: 'POST' });
-      if (!res.ok) { alert('Failed to clear current logs'); return; }
-      alert('Cleared current logs (no archive)');
-      loadArchives();
-    });
-
-    document.getElementById('clearArchives').addEventListener('click', async () => {
-      if (!confirm('Delete all archived log files?')) return;
-      const res = await fetch('/logs/archives/clear', { method: 'POST' });
-      if (!res.ok) { alert('Failed to clear archives'); return; }
-      const body = await res.json();
-      alert('Deleted ' + (body.deleted ? body.deleted.length : 0) + ' archive(s).');
-      loadArchives();
-    });
-
-    // initial load
-    loadArchives();
-  </script>
-</body>
-</html>`);
-});
+// UI routes moved to `routes/ui.js` and served under '/'
 
 // new: documentation page describing server capabilities and endpoints
 app.get('/docs', (req, res) => {
